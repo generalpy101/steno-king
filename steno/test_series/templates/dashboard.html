@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+
+{% block non_container_content %}
+<div class="flex h-screen">
+    <!-- Sidebar -->
+    <div id="sidebar" class="bg-gray-800 text-white w-64 transition-all duration-300 flex flex-col">
+        <button id="toggleSidebar" class="p-4 text-center text-white bg-gray-900">☰</button>
+        <nav class="flex-1 mt-4">
+            <ul>
+                <li>
+                    <a href="#" id="activeCourses" class="flex items-center p-4 hover:bg-gray-700">
+                        <span class="icon">📚</span>
+                        <span class="text ml-4">Enrolled Courses</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" id="availableCourses" class="flex items-center p-4 hover:bg-gray-700">
+                        <span class="icon">🛒</span>
+                        <span class="text ml-4">Available Courses</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" id="userStats" class="flex items-center p-4 hover:bg-gray-700">
+                        <span class="icon">📊</span>
+                        <span class="text ml-4">User Stats</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 p-6">
+        <h1 class="text-2xl font-bold">Dashboard</h1>
+        <div id="content" class="mt-4">
+            <!-- Content will be dynamically loaded here -->
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById("toggleSidebar").addEventListener("click", function() {
+        let sidebar = document.getElementById("sidebar");
+        let texts = sidebar.querySelectorAll(".text");
+        
+        sidebar.classList.toggle("w-16");
+        sidebar.classList.toggle("w-64");
+        
+        texts.forEach(text => {
+            text.classList.toggle("hidden");
+        });
+    });
+
+    document.querySelectorAll("nav ul li a").forEach(item => {
+        item.addEventListener("click", function(event) {
+            event.preventDefault();
+            document.querySelectorAll("nav ul li a").forEach(link => link.classList.remove("bg-gray-700"));
+            this.classList.add("bg-gray-700");
+            
+            fetchCourses(this.id);
+        });
+    });
+
+    // On page load, by default, enrolled courses tab will be active
+    document.addEventListener("DOMContentLoaded", function() {
+        fetchCourses("activeCourses");
+        // Highlight the active tab
+        document.getElementById("activeCourses").classList.add("bg-gray-700");
+    });
+
+    function fetchCourses(type) {
+        let endpoint = type === "activeCourses" ? "/courses?enrolled=true" : "/courses";
+    
+        fetch(endpoint)
+            .then(response => response.json())
+            .then(data => {
+                let content = document.getElementById("content");
+                content.innerHTML = ""; // Clear previous content
+    
+                // Handle empty response
+                if (!data || Object.keys(data).length === 0) {
+                    content.innerHTML = '<p class="text-gray-500 text-center mt-4">No courses found.</p>';
+                    return;
+                }
+    
+                // Generate course cards
+                const coursesHTML = `
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    ${data.map(course => `
+                        <div class="relative bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden group">
+                            <!-- Image Section -->
+                            <div class="h-48 bg-gradient-to-r from-blue-50 to-purple-50 flex items-center justify-center">
+                                <img src="${'https://doodleipsum.com/1920x1080/abstract'}"  alt="${course.name}" class="w-full h-48 object-contain md:object-cover">
+                            </div>
+
+                            
+
+                            <!-- Content Section -->
+                            <div class="p-6">
+                                <div class="flex flex-wrap gap-2 mt-2 pt-2">
+                                    <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-sm">${course.topic.toUpperCase()}</span>
+                                </div>
+                                <h2 class="text-xl font-bold text-gray-900 mb-3">${course.name}</h2>
+                                <p class="text-gray-600 mb-4 line-clamp-3">${course.description}</p>
+                                
+                                <!-- Button -->
+                                <div class="mt-4">
+                                    <a href="/courses/${course.id}" class="inline-flex items-center justify-center w-full px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:-translate-y-1">
+                                        View Course
+                                        <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                                        </svg>
+                                    </a>
+                                </div>
+                            </div>
+
+
+                            <!-- Ribbon for Featured Courses -->
+                            ${course.isFeatured ? `
+                                <div class="absolute top-4 right-4 bg-yellow-400 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
+                                    Featured
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+    
+                content.innerHTML = coursesHTML;
+            })
+            .catch(error => {
+                console.error("Error loading courses:", error);
+                content.innerHTML = '<p class="text-red-500 text-center mt-4">Failed to load courses. Please try again later.</p>';
+            });
+    }
+    
+    // Call function when the page loads
+    
+</script>
+{% endblock %}

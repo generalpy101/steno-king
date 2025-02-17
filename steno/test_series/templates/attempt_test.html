@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto bg-white shadow-md rounded-lg p-6">
+    <div class="flex items-center justify-between mb-4">
+        <!-- Back to course button -->
+        <a href="{% url 'course-details' test.course.id %}" class="inline-flex items-center space-x-2 text-blue-600 hover:text-blue-800 transition-colors duration-200">
+            <div class="p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors duration-200">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+            </div>
+            <span class="font-medium">Back to course({{ test.course }})</span>
+        </a>
+    </div>
+    
+    <h1 class="text-2xl font-bold text-gray-800">{{ test.name }}</h1>
+    <p class="text-gray-600">{{ test.description }}</p>
+
+    <!-- Test Configuration Details -->
+    <div class="mb-4 p-4 border rounded bg-gray-100">
+        <h2 class="font-semibold mb-2">Test Configurations:</h2>
+        <ul class="list-disc list-inside text-gray-700">
+            <li><strong>Backspace Allowed:</strong> {{ test.is_backspace_allowed|yesno:"Yes,No" }}</li>
+            <li><strong>Timed Test:</strong> {{ test.is_timed|yesno:"Yes,No" }}</li>
+            <li><strong>Time Limit:</strong> {% if test.is_timed %}{{ test.time_limit }} sec{% else %}Unlimited{% endif %}</li>
+            <li><strong>Case Sensitive:</strong> {{ test.is_case_sensitive|yesno:"Yes,No" }}</li>
+        </ul>
+    </div>
+
+    <!-- Timer Display -->
+    <div class="mb-4">
+        <h3 class="text-lg font-semibold">Time Left: <span id="timer">--:--</span></h3>
+    </div>
+
+    {% if test.test_type == "steno" and test.audio_file %}
+    <!-- Steno Test: Show Audio Player -->
+    <div class="mt-4">
+        <audio id="audio-player" controls>
+            <source src="{{ test.audio_file.url }}" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+    {% endif %}
+
+    <!-- Typing Area -->
+    <div class="mt-6">
+        {% if test.test_type == "typing" %}
+        <div id="test-content" class="p-4 border border-gray-300 rounded-md bg-gray-100">
+            {{ test.content|safe }}
+        </div>
+        {% endif %}
+        
+        <textarea id="typed-text" class="w-full p-3 mt-4 border rounded-md" rows="6"
+            placeholder="Type here..." onpaste="return false;" disabled></textarea>
+        
+        <button id="start-btn" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            Start Test
+        </button>
+        <button id="submit-btn" class="mt-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 hidden">
+            Submit Test
+        </button>
+    </div>
+
+    
+</div>
+
+<div id="result" class="mt-6 hidden">
+    <h2 class="text-xl font-semibold">Results:</h2>
+    
+    <div id="diff-output" class="p-3 mt-2 border rounded-md bg-gray-50"></div>
+
+    <!-- Stats Section -->
+    <div class="mt-4 p-4 border rounded-md bg-gray-100">
+        <h3 class="text-lg font-semibold">Test Statistics</h3>
+        <div class="grid grid-cols-2 gap-4 mt-2 text-gray-700">
+            <div><strong>Total Words in Passage:</strong> <span id="total-words">--</span></div>
+            <div><strong>Total Typed Words:</strong> <span id="typed-words">--</span></div>
+            <div><strong>Correct Words:</strong> <span id="correct-words" class="text-green-600">--</span></div>
+            <div><strong>Incorrect Words:</strong> <span id="incorrect-words" class="text-red-600">--</span></div>
+            <div><strong>Omissions:</strong> <span id="omissions" class="text-yellow-600">--</span></div>
+            <div><strong>Keystrokes:</strong> <span id="keystrokes">--</span></div>
+            <div><strong>Typing Duration:</strong> <span id="typing-duration">--</span> sec</div>
+            <div><strong>Error Percentage:</strong> <span id="error-percentage" class="text-red-600">--</span>%</div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-2 gap-4 text-gray-900">
+            <div class="p-2 bg-blue-100 rounded-md">
+                <h4 class="font-semibold">Gross Speed</h4>
+                <p><span id="gross-wpm" class="text-xl font-bold">--</span> WPM</p>
+                <p><span id="gross-kdph" class="text-lg">--</span> KDPH</p>
+            </div>
+            <div class="p-2 bg-green-100 rounded-md">
+                <h4 class="font-semibold">Net Speed</h4>
+                <p><span id="net-wpm" class="text-xl font-bold">--</span> WPM</p>
+                <p><span id="net-kdph" class="text-lg">--</span> KDPH</p>
+            </div>
+        </div>
+
+        <p class="mt-4 text-gray-700"><strong>Speed Accuracy:</strong> <span id="accuracy" class="text-blue-600">--</span>%</p>
+    </div>
+</div>
+
+
+<script>
+
+    let timer;
+    let timeLeft = {{ test.time_limit|default:0 }};
+    let isTimed = {{ test.is_timed|yesno:"true,false" }};
+    let hasAttempted = {{ has_attempted|yesno:"true,false" }};
+    let timerElement = document.getElementById("timer");
+    let startBtn = document.getElementById("start-btn");
+    let submitBtn = document.getElementById("submit-btn");
+    let typedText = document.getElementById("typed-text");
+    let startTime = null;
+    let editorInstance = null;
+
+    document.addEventListener("DOMContentLoaded", function () {
+        if (hasAttempted) {
+            startBtn.textContent = "Retake Test";
+        }
+
+        CKEDITOR.replace('typed-text', {
+            removePlugins: 'elementspath',
+            resize_enabled: false,
+            allowedContent: true  // Keep formatting
+        });
+    
+        editorInstance = CKEDITOR.instances["typed-text"];
+
+        startBtn.addEventListener("click", function () {
+            startBtn.classList.add("hidden");
+            submitBtn.classList.remove("hidden");
+            // Enable CKEditor
+            editorInstance.setReadOnly(false);
+            editorInstance.focus();
+            typedText.focus();
+            startTime = new Date();
+
+            if (isTimed) {
+                timerElement.textContent = formatTime(timeLeft);
+                timer = setInterval(() => {
+                    if (timeLeft <= 0) {
+                        clearInterval(timer);
+                        submitTest();
+                    } else {
+                        timeLeft--;
+                        timerElement.textContent = formatTime(timeLeft);
+                    }
+                }, 1000);
+            } else {
+                let elapsedTime = 0;
+                timer = setInterval(() => {
+                    elapsedTime++;
+                    timerElement.textContent = formatTime(elapsedTime);
+                }, 1000);
+            }
+        });
+
+        submitBtn.addEventListener("click", submitTest);
+    });
+
+    function submitTest() {
+        clearInterval(timer);
+        startBtn.classList.remove("hidden");
+        submitBtn.classList.add("hidden");
+        startBtn.textContent = "Retake Test";
+        typedText.disabled = true;
+
+        let origText = `{{ test.content|escapejs }}`;
+        let typedTextValue = editorInstance.getData()
+        let duration = (new Date() - startTime) / 1000;
+
+        editorInstance.setReadOnly(true);
+
+        fetch("{% url 'attempt_test_api' test.id %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: JSON.stringify({ orig_text: origText, typed_text: typedTextValue, duration_seconds: duration })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+            document.getElementById("diff-output").innerHTML = data.diff_html;
+            updateStats(data.stats);
+            document.getElementById("result").classList.remove("hidden");
+        })
+        .catch(error => console.error("Error:", error));
+    }
+
+    function updateStats(stats) {
+        document.getElementById("total-words").textContent = stats.total_words_in_passage;
+        document.getElementById("typed-words").textContent = stats.total_typed_words;
+        document.getElementById("correct-words").textContent = stats.correct_words;
+        document.getElementById("incorrect-words").textContent = stats.incorrect_words;
+        document.getElementById("omissions").textContent = stats.omissions;
+        document.getElementById("keystrokes").textContent = stats.keystrokes;
+        document.getElementById("typing-duration").textContent = stats.typing_duration_seconds.toFixed(2);
+        document.getElementById("error-percentage").textContent = stats.error_percentage.toFixed(1);
+        document.getElementById("gross-wpm").textContent = stats.gross_typing_speed_wpm;
+        document.getElementById("net-wpm").textContent = stats.net_typing_speed_wpm;
+        document.getElementById("gross-kdph").textContent = stats.gross_typing_speed_kdph;
+        document.getElementById("net-kdph").textContent = stats.net_typing_speed_kdph;
+        document.getElementById("accuracy").textContent = stats.speed_accuracy_percent.toFixed(1);
+    }
+
+    function formatTime(seconds) {
+        let min = Math.floor(seconds / 60);
+        let sec = seconds % 60;
+        return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
+</script>
+{% endblock %}
